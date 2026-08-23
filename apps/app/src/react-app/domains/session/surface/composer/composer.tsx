@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { Agent } from "@opencode-ai/sdk/v2/client";
-import { AppWindowMac, ArrowUp, Check, ChevronDown, ChevronRight, FileText, LoaderCircle, Paperclip, Plus, RefreshCw, Settings, Square, Terminal, X, Zap } from "lucide-react";
+import { AppWindowMac, ArrowUp, Check, ChevronDown, ChevronRight, FileText, LoaderCircle, Mic, Paperclip, Plus, RefreshCw, Settings, Square, Terminal, X, Zap } from "lucide-react";
 import fuzzysort from "fuzzysort";
 import { toast } from "@/components/ui/sonner";
 import type { CloudImportedPlugin, CloudImportedPluginFile } from "@/app/cloud/import-state";
@@ -33,6 +33,8 @@ import {
   composerConnectionSignIn,
   mergeComposerConnectionInventory,
 } from "./composer-connections";
+import { useDictation } from "./use-dictation";
+import { useWorkspace } from "@/react-app/shell/workspace-provider";
 
 type MentionItem = {
   id: string;
@@ -280,6 +282,26 @@ export function ReactSessionComposer(props: ComposerProps) {
   useEffect(() => {
     draftRef.current = props.draft;
   }, [props.draft]);
+
+  // Composer dictation (#1555). Each completed utterance is appended through the
+  // editor handle rather than props.onDraftChange, so attachments, chips, undo
+  // history, and the caret all survive. OnChangePlugin propagates the new text
+  // up to the draft store on its own.
+  const { openworkServerClient } = useWorkspace();
+  const handleDictationTranscript = useCallback((text: string) => {
+    editorRef.current?.appendText(text);
+  }, []);
+  const dictation = useDictation({ client: openworkServerClient, onFinalTranscript: handleDictationTranscript });
+  const dictationActive = dictation.status === "listening" || dictation.status === "starting";
+  useEffect(() => {
+    if (dictation.status === "error" && dictation.error) toast.error(dictation.error);
+  }, [dictation.error, dictation.status]);
+  // Never leave the mic open once the composer is locked (send in flight,
+  // session switch, read-only workspace).
+  const stopDictation = dictation.stop;
+  useEffect(() => {
+    if (props.disabled) stopDictation();
+  }, [props.disabled, stopDictation]);
 
   // Follow-up message UX (only relevant while the agent is busy):
   // - Enter (and the send button) queues the message until the agent finishes.
@@ -1374,6 +1396,22 @@ export function ReactSessionComposer(props: ComposerProps) {
               }}
             />
 
+            {/* Live dictation preview (#1555). Interim text is uncorrected and
+                not yet part of the draft; it is replaced by the final transcript
+                landing in the editor above when the utterance completes. */}
+            {dictationActive ? (
+              <div
+                className="mt-1.5 flex items-start gap-2 text-[13px] leading-snug text-gray-10"
+                aria-live="polite"
+                data-testid="composer-dictation-interim"
+              >
+                <span className="mt-1.5 size-1.5 shrink-0 animate-pulse rounded-full bg-red-9" aria-hidden="true" />
+                <span className="min-w-0 flex-1 italic">
+                  {dictation.interim || (dictation.status === "starting" ? t("composer.dictation_connecting") : t("composer.dictation_listening"))}
+                </span>
+              </div>
+            ) : null}
+
             {/* Action row — tools, attachments, model, and send stay on one line */}
             <div className="mt-2 flex items-center gap-1.5">
               <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -1637,6 +1675,29 @@ export function ReactSessionComposer(props: ComposerProps) {
                 >
                   <Paperclip size={16} />
                 </button>
+
+                {/* Dictation mic (#1555). Hidden entirely where the runtime has
+                    no microphone capture rather than showing a dead control. */}
+                {dictation.supported ? (
+                  <button
+                    type="button"
+                    className={`inline-flex h-9 max-h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors ${
+                      dictationActive ? "bg-red-3 text-red-11 hover:bg-red-4" : "text-gray-10 hover:bg-gray-3"
+                    }`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={dictation.toggle}
+                    disabled={props.disabled}
+                    aria-pressed={dictationActive}
+                    aria-label={dictationActive ? t("composer.dictation_stop") : t("composer.dictation_start")}
+                    title={dictationActive ? t("composer.dictation_stop") : t("composer.dictation_start")}
+                  >
+                    {dictation.status === "starting" ? (
+                      <LoaderCircle size={16} className="animate-spin" />
+                    ) : (
+                      <Mic size={16} className={dictationActive ? "animate-pulse" : ""} />
+                    )}
+                  </button>
+                ) : null}
 
                 {/* Agent picker (#2101/#1971). Only shown once a non-default
                     agent is selected. Switching back to Default agent lives in

@@ -153,6 +153,13 @@ const OPENCODE_VERSION = constants.opencodeVersion.trim().replace(/^v/, "");
 
 const OPENWORK_VOICE_REALTIME_MODEL = "gpt-realtime-2";
 const OPENWORK_VOICE_TRANSCRIPTION_MODEL = "gpt-4o-transcribe";
+/**
+ * "voice" mints the conversational Voice Mode session (model speaks back and
+ * calls OpenWork tools). "transcription" mints a dictation-only session for the
+ * composer mic: the model never responds, so there is no audio output, no tool
+ * surface, and no assistant turn to interrupt the speaker mid-sentence.
+ */
+type VoiceSessionMode = "voice" | "transcription";
 let desktopCloudSyncQueue: Promise<void> = Promise.resolve();
 const agentDiagnosticsLastRunByServer = new WeakMap<ServerConfig, Map<string, number>>();
 const agentDiagnosticsInFlightByServer = new WeakMap<ServerConfig, Set<string>>();
@@ -566,6 +573,36 @@ Help the user control OpenWork by using the semantic OpenWork UI tools.
 - Summarize tool results briefly and offer the next useful step.${contextSection}`;
 }
 
+function readVoiceSessionMode(input: unknown): VoiceSessionMode {
+  return readStringField(input, "mode") === "transcription" ? "transcription" : "voice";
+}
+
+/**
+ * Dictation-only Realtime session. `create_response: false` keeps the model
+ * silent so the composer mic behaves like a transcriber, and the longer silence
+ * window lets the speaker pause mid-thought without ending the turn.
+ */
+function buildTranscriptionRealtimeSession(model: string) {
+  return {
+    type: "realtime",
+    model,
+    output_modalities: ["text"],
+    audio: {
+      input: {
+        transcription: { model: OPENWORK_VOICE_TRANSCRIPTION_MODEL, language: "en" },
+        turn_detection: {
+          type: "server_vad",
+          threshold: 0.5,
+          silence_duration_ms: 600,
+          prefix_padding_ms: 300,
+          create_response: false,
+          interrupt_response: false,
+        },
+      },
+    },
+  };
+}
+
 function enqueueDesktopCloudSync<T>(operation: () => Promise<T>): Promise<T> {
   const run = desktopCloudSyncQueue.then(operation);
   desktopCloudSyncQueue = run.then(
@@ -666,6 +703,7 @@ async function createManagedVoiceSession(config: { baseUrl: string; apiKey: stri
 
 async function createDirectOpenAiVoiceSession(apiKey: string, input: unknown) {
   const model = readStringField(input, "model") || OPENWORK_VOICE_REALTIME_MODEL;
+  const mode = readVoiceSessionMode(input);
   const sessionContext = readStringField(input, "sessionContext").slice(0, 6_000);
   const response = await externalFetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
@@ -674,27 +712,30 @@ async function createDirectOpenAiVoiceSession(apiKey: string, input: unknown) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      session: {
-        type: "realtime",
-        model,
-        output_modalities: ["audio"],
-        audio: {
-          input: {
-            transcription: { model: OPENWORK_VOICE_TRANSCRIPTION_MODEL, language: "en" },
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.58,
-              silence_duration_ms: 320,
-              prefix_padding_ms: 300,
-              create_response: true,
-              interrupt_response: true,
+      session:
+        mode === "transcription"
+          ? buildTranscriptionRealtimeSession(model)
+          : {
+              type: "realtime",
+              model,
+              output_modalities: ["audio"],
+              audio: {
+                input: {
+                  transcription: { model: OPENWORK_VOICE_TRANSCRIPTION_MODEL, language: "en" },
+                  turn_detection: {
+                    type: "server_vad",
+                    threshold: 0.58,
+                    silence_duration_ms: 320,
+                    prefix_padding_ms: 300,
+                    create_response: true,
+                    interrupt_response: true,
+                  },
+                },
+              },
+              instructions: openworkVoiceRealtimeInstructions(sessionContext),
+              tool_choice: "auto",
+              tools: OPENWORK_VOICE_REALTIME_TOOLS,
             },
-          },
-        },
-        instructions: openworkVoiceRealtimeInstructions(sessionContext),
-        tool_choice: "auto",
-        tools: OPENWORK_VOICE_REALTIME_TOOLS,
-      },
     }),
   });
 
@@ -723,7 +764,7 @@ async function createDirectOpenAiVoiceSession(apiKey: string, input: unknown) {
     expiresAt,
     model,
     transcriptionModel: OPENWORK_VOICE_TRANSCRIPTION_MODEL,
-    tools: OPENWORK_VOICE_REALTIME_TOOLS.map((tool) => tool.name),
+    tools: mode === "transcription" ? [] : OPENWORK_VOICE_REALTIME_TOOLS.map((tool) => tool.name),
   };
 }
 

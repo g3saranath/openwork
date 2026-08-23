@@ -2395,7 +2395,7 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
         timeoutMs: timeouts.config,
       }),
 
-    createVoiceRealtimeSession: (payload?: { model?: string; sessionContext?: string }) =>
+    createVoiceRealtimeSession: (payload?: { model?: string; sessionContext?: string; mode?: "voice" | "transcription" }) =>
       requestJson<{
         ok: true;
         clientSecret: string;

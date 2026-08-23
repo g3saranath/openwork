@@ -115,12 +115,39 @@ Help the user control OpenWork by using the semantic OpenWork UI tools.
 - Summarize tool results briefly and offer the next useful step.`
 }
 
+/**
+ * Dictation-only Realtime session for the composer mic. `create_response: false`
+ * keeps the model silent so nothing is spoken back or billed as an assistant
+ * turn, and the longer silence window tolerates natural pauses while dictating.
+ */
+function buildTranscriptionRealtimeSession(model: string) {
+  return {
+    type: "realtime",
+    model,
+    output_modalities: ["text"],
+    audio: {
+      input: {
+        transcription: { model: OPENWORK_VOICE_TRANSCRIPTION_MODEL, language: "en" },
+        turn_detection: {
+          type: "server_vad",
+          threshold: 0.5,
+          silence_duration_ms: 600,
+          prefix_padding_ms: 300,
+          create_response: false,
+          interrupt_response: false,
+        },
+      },
+    },
+  }
+}
+
 async function createOpenAiRealtimeClientSecret(input: unknown, openworkRequestId: string) {
   if (!env.openAiRealtimeApiKey) {
     return Response.json({ error: { message: "Managed voice is not configured.", type: "invalid_request_error", code: "openai_realtime_key_missing" } }, { status: 503 })
   }
 
   const model = readStringField(input, "model") || OPENWORK_VOICE_REALTIME_MODEL
+  const mode = readStringField(input, "mode") === "transcription" ? "transcription" : "voice"
   const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
     headers: {
@@ -128,27 +155,30 @@ async function createOpenAiRealtimeClientSecret(input: unknown, openworkRequestI
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      session: {
-        type: "realtime",
-        model,
-        output_modalities: ["audio"],
-        audio: {
-          input: {
-            transcription: { model: OPENWORK_VOICE_TRANSCRIPTION_MODEL, language: "en" },
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.58,
-              silence_duration_ms: 320,
-              prefix_padding_ms: 300,
-              create_response: true,
-              interrupt_response: true,
+      session:
+        mode === "transcription"
+          ? buildTranscriptionRealtimeSession(model)
+          : {
+              type: "realtime",
+              model,
+              output_modalities: ["audio"],
+              audio: {
+                input: {
+                  transcription: { model: OPENWORK_VOICE_TRANSCRIPTION_MODEL, language: "en" },
+                  turn_detection: {
+                    type: "server_vad",
+                    threshold: 0.58,
+                    silence_duration_ms: 320,
+                    prefix_padding_ms: 300,
+                    create_response: true,
+                    interrupt_response: true,
+                  },
+                },
+              },
+              instructions: openworkVoiceRealtimeInstructions(),
+              tool_choice: "auto",
+              tools: OPENWORK_VOICE_REALTIME_TOOLS,
             },
-          },
-        },
-        instructions: openworkVoiceRealtimeInstructions(),
-        tool_choice: "auto",
-        tools: OPENWORK_VOICE_REALTIME_TOOLS,
-      },
     }),
   })
 
@@ -177,7 +207,7 @@ async function createOpenAiRealtimeClientSecret(input: unknown, openworkRequestI
     expiresAt,
     model,
     transcriptionModel: OPENWORK_VOICE_TRANSCRIPTION_MODEL,
-    tools: OPENWORK_VOICE_REALTIME_TOOLS.map((tool) => tool.name),
+    tools: mode === "transcription" ? [] : OPENWORK_VOICE_REALTIME_TOOLS.map((tool) => tool.name),
     source: "openwork-models",
     openworkRequestId,
   })

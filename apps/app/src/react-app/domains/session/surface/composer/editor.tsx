@@ -68,6 +68,13 @@ type EditorProps = {
 
 export type LexicalPromptEditorHandle = {
   insertSkillAtSelection: (skillName: string, skillToken?: string) => void;
+  /**
+   * Append plain text at the end of the draft, inserting a separating space when
+   * the draft does not already end in whitespace. Used by composer dictation so
+   * each finished utterance lands as ordinary editable text without rebuilding
+   * the document (which would drop chips, reset undo, and steal the cursor).
+   */
+  appendText: (text: string) => void;
 };
 
 type SerializedComposerMentionNode = Spread<
@@ -1169,6 +1176,14 @@ function ImperativeHandlePlugin(props: { editorRef: ForwardedRef<LexicalPromptEd
     insertSkillAtSelection(skillName: string, skillToken?: string) {
       editor.update(() => insertSkillAtSelection(skillName, skillToken));
       editor.focus();
+    },
+    appendText(text: string) {
+      editor.update(() => {
+        const root = $getRoot();
+        root.selectEnd();
+        const needsSpace = /\S$/.test(root.getTextContent());
+        insertPastedText(needsSpace ? ` ${text}` : text);
+      });
     },
   }), [editor]);
 
