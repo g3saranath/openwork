@@ -735,6 +735,32 @@ export function AdvancedWorkspaceRunModeSection() {
   );
 }
 
+export function AdvancedSessionTransferSection() {
+  const { sessionTransferEnabled, toggleSessionTransfer } = useFeatureFlagsPreferences();
+  return (
+    <LayoutSection id="advanced-session-transfer">
+      <LayoutSectionHeader>
+        <LayoutSectionTitle>{t("session_transfer.settings_title")}</LayoutSectionTitle>
+        <LayoutSectionDescription>{t("session_transfer.settings_description")}</LayoutSectionDescription>
+      </LayoutSectionHeader>
+      <LayoutSectionItem>
+        <LayoutSectionItemHeader>
+          <LayoutSectionItemTitle>{t("session_transfer.settings_toggle")}</LayoutSectionItemTitle>
+          <LayoutSectionItemDescription>{t("session_transfer.settings_toggle_description")}</LayoutSectionItemDescription>
+          <LayoutSectionItemHeaderActions>
+            <Switch
+              data-testid="session-transfer-flag"
+              aria-label={t("session_transfer.settings_toggle")}
+              checked={sessionTransferEnabled}
+              onCheckedChange={toggleSessionTransfer}
+            />
+          </LayoutSectionItemHeaderActions>
+        </LayoutSectionItemHeader>
+      </LayoutSectionItem>
+    </LayoutSection>
+  );
+}
+
 export function AdvancedEngineV2PreviewSection(props: { client: OpenworkServerClient | null }) {
   const engine = useOpencodeEngineControls(props.client);
   if (!isDesktopRuntime()) return null;

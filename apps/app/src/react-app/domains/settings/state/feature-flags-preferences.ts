@@ -16,8 +16,21 @@ export function useFeatureFlagsPreferences() {
     }));
   }, [setPrefs]);
 
+  const sessionTransferEnabled = prefs.featureFlags?.sessionTransfer === true;
+  const toggleSessionTransfer = useCallback(() => {
+    setPrefs((previous) => ({
+      ...previous,
+      featureFlags: {
+        ...previous.featureFlags,
+        sessionTransfer: !previous.featureFlags?.sessionTransfer,
+      },
+    }));
+  }, [setPrefs]);
+
   return {
     workspaceRunModeEnabled,
     toggleWorkspaceRunMode,
+    sessionTransferEnabled,
+    toggleSessionTransfer,
   };
 }

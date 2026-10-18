@@ -2,6 +2,7 @@
 import * as React from "react";
 import type { WorkspaceConnectionState } from "../../../../app/types";
 import type { SessionNumberShortcutOs } from "../../../shell/session-number-shortcuts";
+import type { SessionTransferSidebar } from "../transfer/imported-sessions-sidebar";
 
 export type SidebarContextValue = {
   draftScope?: string | null;
@@ -29,6 +30,7 @@ export type SidebarContextValue = {
   onOpenRenameWorkspace: (workspaceId: string) => void;
   onRevealWorkspace: (workspaceId: string) => void;
   onForgetWorkspace: (workspaceId: string) => void;
+  sessionTransfer?: SessionTransferSidebar;
   expandWorkspace: (workspaceId: string) => void;
   toggleWorkspaceExpanded: (workspaceId: string) => void;
   expandedWorkspaceIds: Set<string>;

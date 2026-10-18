@@ -16,6 +16,12 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "@/components/ui/sonner";
+import { useFeatureFlagsPreferences } from "@/react-app/domains/settings/state/feature-flags-preferences";
+import { ExportSessionsDialog, type ExportSessionsRequest } from "@/react-app/domains/session/transfer/export-sessions-dialog";
+import { exportWorkspaceSessions } from "@/react-app/domains/session/transfer/export-workspace-sessions";
+import { useImportedSessionsStore } from "@/react-app/domains/session/transfer/imported-sessions";
+import { ImportedSessionView } from "@/react-app/domains/session/transfer/imported-session-view";
+import type { SessionTransferSidebar } from "@/react-app/domains/session/transfer/imported-sessions-sidebar";
 import type { ProviderListResponse } from "@opencode-ai/sdk/v2/client";
 
 import { captureAnalyticsEvent, markTaskRunStart } from "@/app/lib/analytics";
@@ -864,6 +870,39 @@ export function SessionRoute() {
     }
   }, [activeReloadBlockingSessions.length, reloadWorkspaceEngineFromUi, selectedWorkspaceRoot]);
 
+  const { sessionTransferEnabled } = useFeatureFlagsPreferences();
+  const importedSessionId = sessionTransferEnabled ? new URLSearchParams(location.search).get("imported") : null;
+  const importedSessionTitle = useImportedSessionsStore((state) => state.summaries.find((entry) => entry.id === importedSessionId)?.title);
+  const [exportRequest, setExportRequest] = useState<ExportSessionsRequest | null>(null);
+  const sessionTransfer = useMemo<SessionTransferSidebar | undefined>(() => sessionTransferEnabled ? {
+    selectedImportId: importedSessionId,
+    onOpenImportedSession: (importId) => navigate(`${workspaceSessionRoute(selectedWorkspaceId)}?imported=${encodeURIComponent(importId)}`),
+    onCloseImportedSession: () => navigate(workspaceSessionRoute(selectedWorkspaceId)),
+    onExportWorkspace: (workspaceId) => {
+      const workspace = workspaces.find((entry) => entry.id === workspaceId);
+      if (!workspace) return;
+      const sessions = (sessionsByWorkspaceId[workspaceId] ?? [])
+        .filter((session) => !session.parentID)
+        .sort((a, b) => b.time.updated - a.time.updated)
+        .map((session) => ({ id: session.id, title: session.title, updatedAt: session.time.updated }));
+      setExportRequest({ workspaceId, workspaceName: workspaceLabel(workspace), sessions });
+    },
+  } : undefined, [importedSessionId, navigate, selectedWorkspaceId, sessionTransferEnabled, sessionsByWorkspaceId, workspaces]);
+  const exportSessions = async (request: ExportSessionsRequest, sessionIds: string[]) => {
+    const workspace = workspaces.find((entry) => entry.id === request.workspaceId);
+    const endpoint = workspace ? endpointForSessionWorkspace(workspace) : null;
+    if (!endpoint) {
+      toast.error(t("session_transfer.export_unavailable"));
+      return;
+    }
+    try {
+      await exportWorkspaceSessions(endpoint, request.workspaceName, sessionIds);
+      toast.success(t("session_transfer.exported", { count: sessionIds.length }));
+      setExportRequest(null);
+    } catch (error) {
+      toast.error(t("session_transfer.export_failed"), { description: describeRouteError(error) });
+    }
+  };
   const pendingConversation = pendingConversationForRoute(pendingConversations, requestedPendingId, sessionDraftScope, selectedWorkspaceId, location.pathname === "/session");
   const workspaceSessionGroups = useMemo(() => {
     const lists = withPendingSessionPublication(sessionsByWorkspaceId, pendingConversations, sessionDraftScope);
@@ -3838,11 +3877,11 @@ export function SessionRoute() {
         />
       }
       // Page titles match their sidebar labels.
-      primaryTitle={activityRouteActive ? t("activity.title") : appsRouteActive ? "Dashboard" : automationsRouteActive ? "Automations" : calendarRouteActive ? "Calendar" : dashboardRouteActive ? "Dashboard" : undefined}
+      primaryTitle={importedSessionId ? importedSessionTitle : activityRouteActive ? t("activity.title") : appsRouteActive ? "Dashboard" : automationsRouteActive ? "Automations" : calendarRouteActive ? "Calendar" : dashboardRouteActive ? "Dashboard" : undefined}
       // Dashboard, Automations and Library share one flat page surface.
       primarySurface={activityRouteActive || dashboardRouteActive || automationsRouteActive || calendarRouteActive || extensionsMainOpen ? "flat" : undefined}
-      primarySlotIsConversation={!activityRouteActive && Boolean(pendingConversation)}
-      primarySlot={activityRouteActive ? <ActivityPage onTrySkill={trySkillInNewSession} /> : pendingConversation ? <PendingConversationView conversation={pendingConversation} composer={newTaskComposerContext} /> : appsRouteActive ? (
+      primarySlotIsConversation={!activityRouteActive && (Boolean(pendingConversation) || Boolean(importedSessionId))}
+      primarySlot={activityRouteActive ? <ActivityPage onTrySkill={trySkillInNewSession} /> : importedSessionId ? <ImportedSessionView importId={importedSessionId} composer={newTaskComposerContext} /> : pendingConversation ? <PendingConversationView conversation={pendingConversation} composer={newTaskComposerContext} /> : appsRouteActive ? (
         <WorkspaceProvider
           client={opencodeClient}
           opencodeBaseUrl={opencodeBaseUrl}
@@ -3913,6 +3952,7 @@ export function SessionRoute() {
               navigate(calendarRoute());
             }
           : undefined,
+        sessionTransfer,
         dashboardActive: dashboardRouteActive || appsRouteActive,
         onOpenDashboard: dashboardSurfaceAvailable
           ? () => {
@@ -4087,6 +4127,11 @@ export function SessionRoute() {
           ? undefined
           : t("app.local_disabled_reason")
       }
+    />
+    <ExportSessionsDialog
+      request={exportRequest}
+      onOpenChange={(open) => { if (!open) setExportRequest(null); }}
+      onExport={exportSessions}
     />
     <RenameWorkspaceModal
       open={renameWorkspaceId !== null}

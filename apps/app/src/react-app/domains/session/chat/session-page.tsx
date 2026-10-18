@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { focusPaneComposerSoon } from "./workbench-pane-focus";
+import type { SessionTransferSidebar } from "../transfer/imported-sessions-sidebar";
 import { newSessionDraftOwnerKey } from "./new-session-destination";
 import { usePendingConversationStore } from "./pending-conversation-store";
 import { PendingConversationView } from "./pending-conversation";
@@ -186,6 +187,7 @@ export type SessionPageSidebarProps = {
   onOpenAutomations?: () => void;
   calendarActive?: boolean;
   onOpenCalendar?: () => void;
+  sessionTransfer?: SessionTransferSidebar;
   dashboardActive?: boolean;
   onOpenDashboard?: () => void;
   /** Opens the cross-session message search dialog (Cmd/Ctrl+Shift+F). */
@@ -1418,6 +1420,7 @@ export function SessionPage(props: SessionPageProps) {
           onOpenAutomations={props.sidebar.onOpenAutomations}
           calendarActive={props.sidebar.calendarActive}
           onOpenCalendar={props.sidebar.onOpenCalendar}
+          sessionTransfer={props.sidebar.sessionTransfer}
           dashboardActive={props.sidebar.dashboardActive}
           onOpenDashboard={props.sidebar.onOpenDashboard}
           conversationHistory={{

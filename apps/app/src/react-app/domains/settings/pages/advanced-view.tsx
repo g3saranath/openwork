@@ -20,6 +20,7 @@ import {
   AdvancedOrganizationServerSection,
   AdvancedRuntimeConfigSourcesSection,
   AdvancedRuntimeSection,
+  AdvancedSessionTransferSection,
   AdvancedWorkspaceRunModeSection,
 } from "./advanced-view-sections";
 
@@ -216,6 +217,7 @@ export function AdvancedView(props: AdvancedViewProps) {
         <AdvancedEngineV2PreviewSection client={props.engineClient} />
 
         <AdvancedWorkspaceRunModeSection />
+        <AdvancedSessionTransferSection />
 
         <AdvancedDeveloperSection
           busy={props.busy}

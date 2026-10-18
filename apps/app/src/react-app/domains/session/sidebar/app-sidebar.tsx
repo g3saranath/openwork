@@ -27,6 +27,7 @@ import {
   Trash2,
   RotateCcw,
   FolderOpen,
+  Download,
   SquarePen,
   Tag,
   X,
@@ -147,6 +148,13 @@ import {
 import { WorkspaceAvatarPicker } from "./workspace-avatar-picker";
 import { isSameWorkbenchSession, useWorkbenchStore } from "../chat/workbench-store";
 import { SidebarDestination } from "./sidebar-destination";
+import { useImportedSessionsStore } from "../transfer/imported-sessions";
+import {
+  ImportedSessionsSection,
+  importSessionsFromPicker,
+  SessionsViewMenu,
+  type SessionTransferSidebar,
+} from "../transfer/imported-sessions-sidebar";
 import { SessionTitle } from "./session-title";
 import { getSessionOrder } from "./session-order";
 import { SESSION_DRAG_TYPE, SessionDragScope, SessionReorderList, useDraggedSession, useSessionReorderTarget } from "./session-reorder";
@@ -572,6 +580,12 @@ function WorkspaceActionsMenu({ workspace, className }: WorkspaceActionsMenuProp
             {isWindowsPlatform() ? t("workspace_list.reveal_explorer") : t("workspace_list.reveal_finder")}
           </DropdownMenuItem>
         ) : null}
+        {ctx.sessionTransfer ? (
+          <DropdownMenuItem onClick={() => ctx.sessionTransfer?.onExportWorkspace(workspace.id)}>
+            <Download className="size-4" />
+            {t("session_transfer.export_menu")}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => ctx.onOpenCreateGroupModal?.(workspace.id)}>
           <FolderPlus className="size-4" />
@@ -591,6 +605,8 @@ function WorkspaceActionsMenu({ workspace, className }: WorkspaceActionsMenuProp
 }
 
 export type AppSidebarProps = {
+  /** Export and import of sessions; absent while the feature is off. */
+  sessionTransfer?: SessionTransferSidebar;
   draftScope?: string | null;
   sessionNumberShortcuts: SessionNumberShortcutsState;
   workspaceSessionGroups: WorkspaceSessionGroup[];
@@ -729,6 +745,7 @@ export function AppSidebar(props: AppSidebarProps) {
     onOpenRenameWorkspace: props.onOpenRenameWorkspace,
     onRevealWorkspace: props.onRevealWorkspace,
     onForgetWorkspace: props.onForgetWorkspace,
+    sessionTransfer: props.sessionTransfer,
     expandWorkspace,
     toggleWorkspaceExpanded,
     expandedWorkspaceIds,
@@ -738,6 +755,8 @@ export function AppSidebar(props: AppSidebarProps) {
 
   const brandLogoUrl = useBrandLogoUrl();
   const brandAppName = useBrandAppName();
+  const sessionsView = useImportedSessionsStore((state) => state.sidebarView);
+  const showImported = props.sessionTransfer !== undefined && sessionsView === "imported";
   const pinnedIds = useSessionManagementStore((state) => state.pinnedIds);
   const pinnedSessions = React.useMemo(
     () => buildGlobalPinnedSessions(props.workspaceSessionGroups, pinnedIds),
@@ -849,16 +868,33 @@ export function AppSidebar(props: AppSidebarProps) {
             className="no-scrollbar flex min-h-0 flex-1 flex-col gap-0 overflow-x-hidden overflow-y-auto [overflow-anchor:none] [--radius:var(--radius-md)] group-data-[collapsible=icon]:overflow-hidden"
           >
             <SidebarLayoutAnimationGate />
-            {pinnedSessions.length > 0 ? (
+            {pinnedSessions.length > 0 && !showImported ? (
               <GlobalPinnedSessions entries={pinnedSessions} />
             ) : null}
             {/* A flex item of the scrolling list: without shrink-0 it collapses to its
                 button's height once the list overflows, shifting every row up. */}
             <div className={cn("group/workspaces-header flex h-6 shrink-0 items-center mt-4", SIDEBAR_SECTION_LANE)}>
-              <span className={SIDEBAR_SECTION_LABEL}>
-                {t("workspace_list.title")}
-              </span>
-              {canCreateWorkspaces() ? (
+              {props.sessionTransfer ? (
+                <SessionsViewMenu />
+              ) : (
+                <span className={SIDEBAR_SECTION_LABEL}>
+                  {t("workspace_list.title")}
+                </span>
+              )}
+              {showImported && props.sessionTransfer ? (
+                <button
+                  type="button"
+                  data-testid="sidebar-import-sessions"
+                  className="ml-auto flex size-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-foreground"
+                  onClick={() => {
+                    if (props.sessionTransfer) void importSessionsFromPicker(props.sessionTransfer.onOpenImportedSession);
+                  }}
+                  aria-label={t("session_transfer.import_action")}
+                  title={t("session_transfer.import_action")}
+                >
+                  <Plus className="size-3.5" />
+                </button>
+              ) : canCreateWorkspaces() ? (
                 <button
                   type="button"
                   className="ml-auto flex size-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-foreground"
@@ -870,9 +906,13 @@ export function AppSidebar(props: AppSidebarProps) {
                 </button>
               ) : null}
             </div>
+            {showImported && props.sessionTransfer ? (
+              <ImportedSessionsSection transfer={props.sessionTransfer} />
+            ) : null}
             <Reorder.Group
               as="div"
               axis="y"
+              hidden={showImported}
               values={props.workspaceSessionGroups.map((group) => group.workspace.id)}
               onReorder={(workspaceIds) => props.onReorderWorkspaces?.(workspaceIds)}
               className="flex flex-col gap-0.5"
@@ -887,7 +927,7 @@ export function AppSidebar(props: AppSidebarProps) {
                 />
               ))}
             </Reorder.Group>
-            {archivedSessions.length > 0 ? (
+            {archivedSessions.length > 0 && !showImported ? (
               <GlobalArchivedSessions entries={archivedSessions} />
             ) : null}
           </m.div>
